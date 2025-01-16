@@ -1,0 +1,98 @@
+#!/bin/zsh
+
+readonly program="$(basename "${0}")"
+readonly action="${1}"
+
+# Helpers
+function error {
+  echo "${1}" >&2
+  exit 1
+}
+
+function usage {
+  echo "
+    Shortcuts for launchctl actions.
+
+    Usage:
+      ${program} <action> <plist>
+      ${program} <action> <bid>
+      ${program} <action>
+
+    Actions:
+      Long Name   Alias   Argument   Description
+      ------------------------------------------
+      bootstrap   s       plist      Load user job.
+      bootout     o       plist      Unload user job.
+      kickstart   k       plist      Run user job now.
+      reload      r       plist      Run, in order: bootout, boostrap.
+      rekick      rk      plist      Run, in order: bootout, bootstrap, kickstart.
+      disable     di      bid        Disable user service (do not load on boot).
+      enable      en      bid        Enable user service (activate on boot even if unloaded previously).
+      status      st      none       Print disabled services.
+      help        h       none       Show this help.
+
+    Options:
+      -h, --help   Show this help.
+  " | sed -E 's/^ {4}//'
+}
+
+# Show help when no arguments given
+if [[ "${#}" -eq 0 ]]
+then
+  usage
+  exit 0
+fi
+
+# Prepare arguments and make checks depending on action
+case "${action}" in
+  bootstrap | s | bootout | o | kickstart | k | reload | r | reckick | rk)
+    readonly plist="$(realpath -q "${2}")"
+    readonly bid="$(basename "${plist%.plist}")"
+
+    [[ "${#}" -eq 2 ]] || error 'A single plist is required as the argument'
+    [[ -f "${plist}" ]] || error "File does not exist: ${2}"
+    [[ "$(dirname "${plist}")" == "${HOME}/Library/LaunchAgents" ]] || error 'Plist must be in ~/Library/LaunchAgents'
+    ;;
+  disable | di | enable | en)
+    readonly bid="${2}"
+    [[ "${#}" -eq 2 ]] || error 'A single bundle ID is required as the argument'
+    ;;
+esac
+
+# Take action
+case "${action}" in
+  bootstrap | s)
+    launchctl bootstrap "gui/$(id -u "${USER}")" "${plist}"
+    ;;
+  bootout | o)
+    launchctl bootout "gui/$(id -u "${USER}")" "${plist}"
+     ;;
+  kickstart | k)
+    launchctl kickstart "gui/$(id -u "${USER}")/${bid}"
+    ;;
+  reload | r)
+    launchctl bootout "gui/$(id -u "${USER}")" "${plist}"
+    launchctl bootstrap "gui/$(id -u "${USER}")" "${plist}"
+    ;;
+  rekick | rk)
+    launchctl bootout "gui/$(id -u "${USER}")" "${plist}"
+    launchctl bootstrap "gui/$(id -u "${USER}")" "${plist}"
+    launchctl kickstart "gui/$(id -u "${USER}")/${bid}"
+    ;;
+  disable | di)
+    launchctl disable "gui/$(id -u "${USER}")/${bid}"
+    ;;
+  enable | en)
+    launchctl enable "gui/$(id -u "${USER}")/${bid}"
+    ;;
+  status | st)
+    launchctl print-disabled "gui/$(id -u "${USER}")"
+    ;;
+  help | h | --help | -h)
+    usage
+    ;;
+  *)
+    echo "Unrecognised action: ${action}"
+    exit 1
+    ;;
+esac
